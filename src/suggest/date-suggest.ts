@@ -8,10 +8,14 @@ import {
   TFile,
 } from "obsidian";
 import type NaturalLanguageDates from "src/main";
+import CalendarPickerModal from "src/modals/calendar-picker";
 import { generateMarkdownLink } from "src/utils";
+
+const CALENDAR_TRIGGER_LABEL = "Pick a date";
 
 interface IDateCompletion {
   label: string;
+  isCalendarTrigger?: boolean;
 }
 
 export default class DateSuggest extends EditorSuggest<IDateCompletion> {
@@ -42,7 +46,10 @@ export default class DateSuggest extends EditorSuggest<IDateCompletion> {
     }
 
     // catch-all if there are no matches
-    return [{ label: context.query }];
+    return [
+      { label: context.query },
+      { label: CALENDAR_TRIGGER_LABEL, isCalendarTrigger: true },
+    ];
   }
 
   getDateSuggestions(context: EditorSuggestContext): IDateCompletion[] {
@@ -85,17 +92,46 @@ export default class DateSuggest extends EditorSuggest<IDateCompletion> {
       ].filter((items) => items.label.toLowerCase().startsWith(context.query));
     }
 
-    return [{ label: "Today" }, { label: "Yesterday" }, { label: "Tomorrow" }].filter(
-      (items) => items.label.toLowerCase().startsWith(context.query)
+    return [
+      { label: "Today" },
+      { label: "Yesterday" },
+      { label: "Tomorrow" },
+      { label: CALENDAR_TRIGGER_LABEL, isCalendarTrigger: true },
+    ].filter((item) =>
+      item.isCalendarTrigger
+        ? context.query === "" || CALENDAR_TRIGGER_LABEL.toLowerCase().startsWith(context.query.toLowerCase())
+        : item.label.toLowerCase().startsWith(context.query.toLowerCase())
     );
   }
 
   renderSuggestion(suggestion: IDateCompletion, el: HTMLElement): void {
-    el.setText(suggestion.label);
+    if (suggestion.isCalendarTrigger) {
+      el.addClass("nld-suggest-calendar");
+      el.createEl("span", { text: "📅 ", cls: "nld-suggest-calendar-icon" });
+      el.createEl("span", { text: suggestion.label });
+    } else {
+      el.setText(suggestion.label);
+    }
   }
 
   selectSuggestion(suggestion: IDateCompletion, event: KeyboardEvent | MouseEvent): void {
     const { editor } = this.context;
+
+    if (suggestion.isCalendarTrigger) {
+      const start = { ...this.context.start };
+      const end = { ...this.context.end };
+      const makeIntoLink = this.plugin.settings.autosuggestToggleLink;
+
+      new CalendarPickerModal(this.app, this.plugin, (date: Date) => {
+        const formattedDate = window.moment(date).format(this.plugin.settings.format);
+        const dateStr = makeIntoLink
+          ? generateMarkdownLink(this.app, formattedDate)
+          : formattedDate;
+        editor.replaceRange(dateStr, start, end);
+      }).open();
+
+      return;
+    }
 
     const includeAlias = event.shiftKey;
     let dateStr = "";
